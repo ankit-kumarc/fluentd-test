@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func main(){
+func main() {
 	serverCertPath, err := filepath.Abs("certs/server.crt")
 	if err != nil {
 		log.Fatalf("Error getting absolute path for server cert: %v", err)
@@ -36,9 +36,12 @@ func main(){
 		MinVersion: tls.VersionTLS12,
 	}
 
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, World!"))
+	})
 	server := &http.Server{
-		ReadHeaderTimeout: 5* time.Second,
-		TLSConfig: tlsConfig,
+		ReadHeaderTimeout: 5 * time.Second,
+		TLSConfig:         tlsConfig,
 	}
 
 	listener, err := net.Listen("tcp", ":443")
