@@ -1,56 +1,50 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"log"
-	"net"
-	"net/http"
-	"os"
-	"path/filepath"
-	"time"
+    "crypto/tls"
+    "crypto/x509"
+    "fmt"
+    "io/ioutil"
+    "net/http"
 )
 
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Hello, World!")
+}
+
 func main() {
-	serverCertPath, err := filepath.Abs("certs/server.crt")
-	if err != nil {
-		log.Fatalf("Error getting absolute path for server cert: %v", err)
-	}
+    // Load server’s certificate and key
+    cert, err := tls.LoadX509KeyPair("/certs/server.crt", "/certs/server.key")
+    if err != nil {
+        fmt.Println("Failed to load server certificate and key: ", err)
+        return
+    }
 
-	serverKeyPath, err := filepath.Abs("certs/server.key")
-	if err != nil {
-		log.Fatalf("Error getting absolute path for server key: %v", err)
-	}
+    // Load client CA certificate
+    clientCACert, err := ioutil.ReadFile("/certs/server.crt") // Replace with the correct CA file
+    if err != nil {
+        fmt.Println("Failed to read client CA cert: ", err)
+        return
+    }
+    clientCertPool := x509.NewCertPool()
+    clientCertPool.AppendCertsFromPEM(clientCACert)
 
-	clientCaCert, err := os.ReadFile(serverCertPath)
-	if err != nil {
-		log.Fatalf("Error reading server cert: %v", err)
-	}
+    // Configure TLS to require and verify client certificate
+    tlsConfig := &tls.Config{
+        Certificates: []tls.Certificate{cert},
+        ClientCAs:    clientCertPool,
+        ClientAuth:   tls.RequireAndVerifyClientCert,
+    }
 
-	clientCertPool := x509.NewCertPool()
-	clientCertPool.AppendCertsFromPEM(clientCaCert)
+    server := &http.Server{
+        Addr:      ":443",
+        Handler:   http.HandlerFunc(handler),
+        TLSConfig: tlsConfig,
+    }
 
-	tlsConfig := &tls.Config{
-		ClientAuth: tls.RequireAndVerifyClientCert,
-		ClientCAs:  clientCertPool,
-		MinVersion: tls.VersionTLS12,
-	}
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
-	})
-	server := &http.Server{
-		ReadHeaderTimeout: 5 * time.Second,
-		TLSConfig:         tlsConfig,
-	}
-
-	listener, err := net.Listen("tcp", ":443")
-	if err != nil {
-		log.Fatalf("Error creating listener: %v", err)
-	}
-
-	err = server.ServeTLS(listener, serverCertPath, serverKeyPath)
-	if err != nil {
-		log.Fatalf("Error serving TLS: %v", err)
-	}
+    fmt.Println("Starting server on port 443...")
+    err = server.ListenAndServeTLS("/certs/server.crt", "/certs/server.key")
+    if err != nil {
+        fmt.Println("Failed to start server: ", err)
+    }
 }
