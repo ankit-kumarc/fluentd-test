@@ -4,53 +4,108 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
+	"os"
 	"log"
 	"net/http"
-	"os"
 )
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	log.Println(w, "Hello, World!")
+func printHeader(r *http.Request) {
+	log.Print(">>>>>>>>>>>>>>>> Header <<<<<<<<<<<<<<<<")
+	// Loop over header names
+	for name, values := range r.Header {
+		// Loop over all values for the name.
+		for _, value := range values {
+			log.Printf("%v:%v", name, value)
+		}
+	}
+}
+
+func printConnState(state *tls.ConnectionState) {
+	log.Print(">>>>>>>>>>>>>>>> State <<<<<<<<<<<<<<<<")
+
+	log.Printf("Version: %x", state.Version)
+	log.Printf("HandshakeComplete: %t", state.HandshakeComplete)
+	log.Printf("DidResume: %t", state.DidResume)
+	log.Printf("CipherSuite: %x", state.CipherSuite)
+	log.Printf("NegotiatedProtocol: %s", state.NegotiatedProtocol)
+	log.Printf("NegotiatedProtocolIsMutual: %t", state.NegotiatedProtocolIsMutual)
+
+	log.Print("Certificate chain:")
+	for i, cert := range state.PeerCertificates {
+		subject := cert.Subject
+		issuer := cert.Issuer
+		log.Printf(" %d s:/C=%v/ST=%v/L=%v/O=%v/OU=%v/CN=%s", i, subject.Country, subject.Province, subject.Locality, subject.Organization, subject.OrganizationalUnit, subject.CommonName)
+		log.Printf("   i:/C=%v/ST=%v/L=%v/O=%v/OU=%v/CN=%s", issuer.Country, issuer.Province, issuer.Locality, issuer.Organization, issuer.OrganizationalUnit, issuer.CommonName)
+	}
+}
+
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	printHeader(r)
+	if r.TLS != nil {
+		printConnState(r.TLS)
+	}
+	log.Print(">>>>>>>>>>>>>>>>> End <<<<<<<<<<<<<<<<<<")
+	fmt.Println("")
+	// Write "Hello, world!" to the response body
+	io.WriteString(w, "Hello, world!\n")
 }
 
 func main() {
-	// Load server’s certificate and key
-	cert, err := tls.LoadX509KeyPair("/certs/server.crt", "/certs/server.key")
-	if err != nil {
-		log.Println("Failed to load server certificate and key: ", err)
-		return
-	}
+	sslPort := 443
 
-	// Load client CA certificate
-	clientCACert, err := os.ReadFile("/certs/server.crt") // Replace with the correct CA file
-	if err != nil {
-		log.Println("Failed to read client CA cert: ", err)
-		return
-	}
-	clientCertPool := x509.NewCertPool()
-	clientCertPool.AppendCertsFromPEM(clientCACert)
+	// Set up a /hello resource handler
+	handler := http.NewServeMux()
+	handler.HandleFunc("/hello", helloHandler)
+	handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "Base path hit\n")
+	})
+	handler.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
+		// print the request body
+		io.WriteString(w, "Logs received\n")
+		log.Println("logs recieved")
+		log.Print(">>>>>>>>>>>>>>>> Body <<<<<<<<<<<<<<<<")
+		log.Printf("%+v", r.Body)
+		log.Print(">>>>>>>>>>>>>>>>> End <<<<<<<<<<<<<<<<<<")
 
-	// Configure TLS to require and verify client certificate
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientCAs:    clientCertPool,
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-	}
-
-	http.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Received request for /logs")
-		log.Println("Hello, World!")
 	})
 
-	server := &http.Server{
-		Addr:      ":443",
-		Handler:   http.HandlerFunc(handler),
+	// load CA certificate file and add it to list of client CAs
+	caCertFile, err := os.ReadFile("/certs/ca.crt")
+	if err != nil {
+		log.Fatalf("error reading CA certificate: %v", err)
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCertFile)
+
+	// Create the TLS Config with the CA pool and enable Client certificate validation
+	tlsConfig := &tls.Config{
+		ClientCAs:                caCertPool,
+		ClientAuth:               tls.RequireAndVerifyClientCert,
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		},
+	}
+	tlsConfig.BuildNameToCertificate()
+
+	// serve on port 8443 of local host
+	server := http.Server{
+		Addr:      fmt.Sprintf(":%d", sslPort),
+		Handler:   handler,
 		TLSConfig: tlsConfig,
 	}
 
-	log.Println("Starting server on port 443...")
-	err = server.ListenAndServeTLS("/certs/server.crt", "/certs/server.key")
-	if err != nil {
-		fmt.Println("Failed to start server: ", err)
+	log.Printf("(HTTPS) Listen on :%d\n", sslPort)
+	if err := server.ListenAndServeTLS("/certs/server.crt", "/certs/server.key"); err != nil {
+		log.Fatalf("(HTTPS) error listening to port: %v", err)
 	}
+
 }
