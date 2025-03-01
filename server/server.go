@@ -11,7 +11,7 @@ import (
 )
 
 func printHeader(r *http.Request) {
-	log.Print(">>>>>>>>>>>>>>>> Header <<<<<<<<<<<<<<<<")
+	log.Print(">>>>>>>>>>>>>>>> Header <<<<<<<<<<<<<<<< \n")
 	// Loop over header names
 	for name, values := range r.Header {
 		// Loop over all values for the name.
@@ -19,36 +19,38 @@ func printHeader(r *http.Request) {
 			log.Printf("%v:%v", name, value)
 		}
 	}
+	log.Print(">>>>>>>>>>>>>>>> Header <<<<<<<<<<<<<<<< \n")
 }
 
 func printConnState(state *tls.ConnectionState) {
-	log.Print(">>>>>>>>>>>>>>>> State <<<<<<<<<<<<<<<<")
+	log.Print(">>>>>>>>>>>>>>>> State <<<<<<<<<<<<<<<< \n")
 
-	log.Printf("Version: %x", state.Version)
-	log.Printf("HandshakeComplete: %t", state.HandshakeComplete)
-	log.Printf("DidResume: %t", state.DidResume)
-	log.Printf("CipherSuite: %x", state.CipherSuite)
-	log.Printf("NegotiatedProtocol: %s", state.NegotiatedProtocol)
-	log.Printf("NegotiatedProtocolIsMutual: %t", state.NegotiatedProtocolIsMutual)
+	log.Printf("Version: %x \n", state.Version)
+	log.Printf("HandshakeComplete: %t \n", state.HandshakeComplete)
+	log.Printf("DidResume: %t\n", state.DidResume)
+	log.Printf("CipherSuite: %x\n", state.CipherSuite)
+	log.Printf("NegotiatedProtocol: %s\n", state.NegotiatedProtocol)
+	log.Printf("NegotiatedProtocolIsMutual: %t/n", state.NegotiatedProtocolIsMutual)
 
 	log.Print("Certificate chain:")
 	for i, cert := range state.PeerCertificates {
 		subject := cert.Subject
 		issuer := cert.Issuer
-		log.Printf(" %d s:/C=%v/ST=%v/L=%v/O=%v/OU=%v/CN=%s", i, subject.Country, subject.Province, subject.Locality, subject.Organization, subject.OrganizationalUnit, subject.CommonName)
-		log.Printf("   i:/C=%v/ST=%v/L=%v/O=%v/OU=%v/CN=%s", issuer.Country, issuer.Province, issuer.Locality, issuer.Organization, issuer.OrganizationalUnit, issuer.CommonName)
+		log.Printf(" %d s:/C=%v/ST=%v/L=%v/O=%v/OU=%v/CN=%s\n", i, subject.Country, subject.Province, subject.Locality, subject.Organization, subject.OrganizationalUnit, subject.CommonName)
+		log.Printf("   i:/C=%v/ST=%v/L=%v/O=%v/OU=%v/CN=%s\n", issuer.Country, issuer.Province, issuer.Locality, issuer.Organization, issuer.OrganizationalUnit, issuer.CommonName)
 	}
+	log.Print(">>>>>>>>>>>>>>>> State <<<<<<<<<<<<<<<< \n")
 }
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
+	log.Print(">>>>>>>>>>>>>>>>> Start <<<<<<<<<<<<<<<<<<\n")
 	printHeader(r)
 	if r.TLS != nil {
 		printConnState(r.TLS)
 	}
-	log.Print(">>>>>>>>>>>>>>>>> End <<<<<<<<<<<<<<<<<<")
-	fmt.Println("")
-	// Write "Hello, world!" to the response body
-	io.WriteString(w, "Hello, world!\n")
+	log.Print(">>>>>>>>>>>>>>>>> End <<<<<<<<<<<<<<<<<<\n")
+	io.WriteString(w, "Logs received\n")
+	log.Print("logs recieved\n")
 }
 
 func main() {
@@ -56,19 +58,10 @@ func main() {
 
 	// Set up a /hello resource handler
 	handler := http.NewServeMux()
-	handler.HandleFunc("/hello", helloHandler)
 	handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "Base path hit\n")
 	})
-	handler.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
-		// print the request body
-		io.WriteString(w, "Logs received\n")
-		log.Println("logs recieved")
-		log.Print(">>>>>>>>>>>>>>>> Body <<<<<<<<<<<<<<<<")
-		log.Printf("%+v", r.Body)
-		log.Print(">>>>>>>>>>>>>>>>> End <<<<<<<<<<<<<<<<<<")
-
-	})
+	handler.HandleFunc("/logs", helloHandler)
 
 	// load CA certificate file and add it to list of client CAs
 	caCertFile, err := os.ReadFile("/certs/ca.crt")
@@ -83,16 +76,16 @@ func main() {
 		ClientCAs:                caCertPool,
 		ClientAuth:               tls.RequireAndVerifyClientCert,
 		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-		PreferServerCipherSuites: true,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		},
+		// CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		// PreferServerCipherSuites: true,
+		// CipherSuites: []uint16{
+		// 	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		// 	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		// 	tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		// 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		// 	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		// 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		// },
 	}
 	tlsConfig.BuildNameToCertificate()
 
